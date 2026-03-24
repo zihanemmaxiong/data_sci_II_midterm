@@ -1,0 +1,42 @@
+---
+title: "Data Science II Midterm Project"
+author: "Midterm Project Group 29"
+date: "2026-03-24"
+output: 
+  html_document:
+    theme: cosmo
+---
+```{r}
+library(tidyverse)
+```
+# Loading and Cleaning data
+```{r}
+load("data/datA.RData")
+load("data/datB.RData")
+```
+
+```{r}
+datA <- datA |> 
+  mutate(
+    across(c(age, bmi, tumor_size, lymph_nodes, Ki67), as.numeric),
+    across(c(menopause, ER, PR, HER2, surgery, chemo, hormonal_therapy), factor),
+    race = factor(race),
+    tumor_grade = factor(tumor_grade),
+    stage = factor(stage)
+  )
+
+datB <- datB |> 
+  mutate(
+    across(c(age, bmi, tumor_size, lymph_nodes, Ki67), as.numeric),
+    across(c(menopause, ER, PR, HER2, surgery, chemo, hormonal_therapy), factor),
+    race = factor(race),
+    tumor_grade = factor(tumor_grade),
+    stage = factor(stage)
+  )
+```
+
+```{r}
+colSums(is.na(datA))
+colSums(is.na(datB)) # Check if any data missing.
+```
+
