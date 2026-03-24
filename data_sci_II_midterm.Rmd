@@ -6,13 +6,23 @@ output:
   html_document:
     theme: cosmo
 ---
-```{r}
+```{r,warning=FALSE}
 library(tidyverse)
+library(caret)
+library(ggplot2)
+library(tidymodels)
+library(patchwork)
+library(corrplot)
+
+set.seed(123)
 ```
 # Loading and Cleaning data
 ```{r}
 load("data/datA.RData")
 load("data/datB.RData")
+
+str(datA)
+str(datB)
 ```
 
 ```{r}
@@ -33,10 +43,119 @@ datB <- datB |>
     tumor_grade = factor(tumor_grade),
     stage = factor(stage)
   )
+
+dim(datA); summary(datA)
+dim(datB); summary(datB)
 ```
 
 ```{r}
 colSums(is.na(datA))
 colSums(is.na(datB)) # Check if any data missing.
+```
+# Data Partition
+```{r}
+# partition first, 0.8
+datsplit <- initial_split(datA, prop = 0.8)
+train <- training(datsplit)
+test <- testing(datsplit)
+```
+
+# Data Visualization and featurePlot
+```{r,warning=FALSE}
+# visualization using train data
+# continuous: age, bmi, tumor_size, lymph_nodes, Ki67
+theme1 <- trellis.par.get()
+theme1$plot.symbol$col <- rgb(.2, .4, .2, .5)
+theme1$plot.symbol$pch <- 16
+theme1$plot.line$col <- rgb(.8, .1, .1, 1)
+theme1$plot.line$lwd <- 2
+theme1$strip.background$col <- rgb(.0, .2, .6, .2)
+trellis.par.set(theme1)
+
+featurePlot(x = train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")],
+            y = train$log_PFS,
+            plot = "scatter",
+            span = .5,
+            labels = c("Predictors", "log_PFS"),
+            type = c("p", "smooth"),
+            layout = c(3, 2))
+```
+
+While looking at the features plots, we can observe that:
+
+`lymph_nodes`: negative relationship with log_PFS — more positive lymph nodes, shorter PFS. The trend appears approximately linear.
+
+`Ki67`: negative relationship with log_PFS. Higher proliferation index associated with shorter PFS, though the trend is relatively mild.
+
+`age`: very weak relationship. Smooth curve is flat.
+
+`bmi`: slight negative relationship. 
+
+`tumor_size`: ngeative relationship. larger tumor size associated with shorter PFS.
+
+```{r}
+# also take a look at the Pearson correlation coefficient
+cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")], 
+    train$log_PFS)
+```
+```{r}
+# corrplot, none r<0.8
+cor_matrix <- cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")])
+corrplot(cor_matrix, method = "number", type = "upper")
+```
+
+```{r}
+# categorical: stage, tumor_grade, ER, PR, HER2, menopause, surgery, chemo, hormonal_therapy
+# I'm using box plot instead of the feature plot
+p1 <- ggplot(train, aes(x = stage, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p2 <- ggplot(train, aes(x = tumor_grade, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p3 <- ggplot(train, aes(x = ER, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p4 <- ggplot(train, aes(x = PR, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p5 <- ggplot(train, aes(x = HER2, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p6 <- ggplot(train, aes(x = menopause, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p7 <- ggplot(train, aes(x = surgery, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p8 <- ggplot(train, aes(x = chemo, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p9 <- ggplot(train, aes(x = hormonal_therapy, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+(p1 + p2 + p3) / (p4 + p5 + p6) / (p7 + p8 + p9)
+```
+
+Notice that:
+
+`stage`: Stage 1 patients having the highest log_PFS and Stage 3 the lowest (F = 81.0, p < 0.001), more advanced disease stage is associated with shorter PFS.
+
+`tumor_grade`: Grade 1 patients had notably higher log_PFS, poorer tumor differentiation is associated with worse prognosis.
+
+`ER`: ER-positive patients had substantially higher log_PFS than ER-negative patients (F = 138.4, p < 0.001)
+
+`hormonal_therapy`: Patients receiving hormonal therapy had markedly higher log_PFS (F = 89.6, p < 0.001)
+
+```{r}
+cat_vars <- c("stage", "tumor_grade", "ER", "PR", "HER2", 
+              "menopause", "surgery", "chemo", "hormonal_therapy")
+
+anova_results <- data.frame(
+  Variable = cat_vars,
+  F_value = NA,
+  P_value = NA
+)
+
+for(i in seq_along(cat_vars)){
+  fit <- aov(log_PFS ~ train[[cat_vars[i]]], data = train)
+  f_val <- summary(fit)[[1]]$`F value`[1]
+  p_val <- summary(fit)[[1]]$`Pr(>F)`[1]
+  anova_results$F_value[i] <- round(f_val, 3)
+  anova_results$P_value[i] <- round(p_val, 4)
+}
+
+anova_results
 ```
 
