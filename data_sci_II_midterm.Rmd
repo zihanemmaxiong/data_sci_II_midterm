@@ -252,7 +252,7 @@ rmse_results |>
   arrange(RMSE)
 ```
 
-As shows above, LASSO achieved the lowest RMSE (0.730), followed closely by Elastic Net, while Ridge and the linear regression model showed slightly higher RMSE values. However, the differences were minimal, indicating that regularization provided only marginal improvement and that the model is relatively stable.
+As shows above, LASSO achieved the lowest RMSE (0.7413), followed closely by Elastic Net, while Ridge and the linear regression model showed slightly higher RMSE values. However, the differences were minimal, indicating that regularization provided only marginal improvement and that the model is relatively stable.
 
 Ridge regression, which applies coefficient shrinkage without variable selection, showed similar performance to the linear regression model, suggesting that removing irrelevant predictors may be more beneficial than shrinkage alone.
 
@@ -276,7 +276,7 @@ lm_fit_final <- lm(
 
 summary(lm_fit_final)
 
-pred <- predict(lm_fit, newdata = test)
+pred <- predict(lm_fit_final, newdata = test)
 rmse_lm_final <- sqrt(mean((test$log_PFS - pred)^2))
 rmse_lm_final
 ```
