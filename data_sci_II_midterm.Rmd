@@ -4,6 +4,9 @@ author: "Midterm Project Group 29"
 date: "2026-03-24"
 output: 
   html_document:
+    toc: true
+    toc_float: true
+    number_sections: false
     theme: cosmo
 ---
 ```{r,warning=FALSE, message=FALSE}
@@ -18,7 +21,7 @@ library(glmnet)
 set.seed(123)
 ```
 
-# Preparation and Inspection  
+# **Preparation and Inspection**  
 ## Loading Data  
 ```{r}
 load("data/datA.RData")
@@ -58,9 +61,9 @@ colSums(is.na(datB)) # Check if any data missing.
 ```   
 
 
-# Part 1: PFS model (1990 - 1995)  
+# **Part 1: PFS model (1990 - 1995)**  
 
-## Data Partition
+## *○ Data Partition*
 
 ```{r}
 set.seed(123)
@@ -173,7 +176,7 @@ for(i in seq_along(cat_vars)){
 anova_results
 ```
 
-## Model Selection   
+## *○ Model Selection*   
 Since the response variable, log-transformed PFS, is continuous, a linear regression model was considered appropriate. Exploratory data analysis showed that most continuous predictors had approximately linear relationships with log_PFS, with only mild non-linearity observed for BMI. Therefore, linear regression was used as the primary modeling approach.
 
 Boxplots of categorical variables also suggested differences in log_PFS across groups, indicating their potential relevance in the model.
@@ -192,7 +195,7 @@ pred <- predict(lm_fit, newdata = test)
 rmse_lm <- sqrt(mean((test$log_PFS - pred)^2))
 ```
 
-### Alternative model: lasso/Ridge/Elastic Net   
+### Alternative model
 To improve model parsimony and reduce potential overfitting, LASSO regression was applied for variable selection. Ridge and Elastic Net models were also fitted to evaluate the effect of regularization and compare predictive performance.
 
 ```{r, preparing data for glmnet}
@@ -203,6 +206,7 @@ x_test  <- model.matrix(log_PFS ~ ., data = test)[, -1]
 y_test  <- test$log_PFS
 ```
 
+#### LASSO regression
 ```{r, LASSO 1}
 set.seed(123)
 cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1)
@@ -214,7 +218,7 @@ best_lambda_lasso <- cv_lasso$lambda.min
 pred_lasso <- predict(cv_lasso, s = "lambda.min", newx = x_test)
 rmse_lasso <- sqrt(mean((y_test - pred_lasso)^2))
 ```
-
+#### Ridge regression
 ```{r, Ridge 1}
 set.seed(123)
 cv_ridge <- cv.glmnet(x_train, y_train, alpha = 0)
@@ -226,6 +230,7 @@ rmse_ridge <- sqrt(mean((y_test - pred_ridge)^2))
 
 ```
 
+#### Elastic net regression
 ```{r, Elastic Net 1}
 set.seed(123)
 cv_enet <- cv.glmnet(x_train, y_train, alpha = 0.5)
@@ -236,6 +241,7 @@ pred_enet <- predict(cv_enet, s = "lambda.min", newx = x_test)
 rmse_enet <- sqrt(mean((y_test - pred_enet)^2))
 ```
 
+### RMSE results
 ```{r}
 rmse_results <- data.frame(
   Model = c("Linear Regression", "LASSO", "Ridge", "Elastic Net"),
@@ -254,7 +260,7 @@ Although regularized models achieved slightly lower RMSE, the improvement was mi
 
 Therefore, LASSO was used as a guide for variable selection. Predictors with non-zero coefficients under λ_min were included in the final linear regression model to enhance interpretability while maintaining predictive performance.
 
-## Final model
+## *○ Final model*
 ```{r, Check the remaining variables}
 coef(cv_lasso, s = "lambda.min")
 ```
