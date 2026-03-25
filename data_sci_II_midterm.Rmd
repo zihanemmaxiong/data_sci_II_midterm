@@ -6,17 +6,20 @@ output:
   html_document:
     theme: cosmo
 ---
-```{r,warning=FALSE}
+```{r,warning=FALSE, message=FALSE}
 library(tidyverse)
 library(caret)
 library(ggplot2)
 library(tidymodels)
 library(patchwork)
 library(corrplot)
+library(glmnet)
 
 set.seed(123)
 ```
-# Loading and Cleaning data
+
+# Preparation and Inspection  
+## Loading Data  
 ```{r}
 load("data/datA.RData")
 load("data/datB.RData")
@@ -25,6 +28,7 @@ str(datA)
 str(datB)
 ```
 
+## Set variable type, dimension, and data summary
 ```{r}
 datA <- datA |> 
   mutate(
@@ -47,20 +51,29 @@ datB <- datB |>
 dim(datA); summary(datA)
 dim(datB); summary(datB)
 ```
-
+## Check for Missing Data   
 ```{r}
 colSums(is.na(datA))
 colSums(is.na(datB)) # Check if any data missing.
-```
-# Data Partition
+```   
+
+
+# Part 1: PFS model (1990 - 1995)  
+
+## Data Partition
+
 ```{r}
+set.seed(123)
 # partition first, 0.8
 datsplit <- initial_split(datA, prop = 0.8)
-train <- training(datsplit)
-test <- testing(datsplit)
+train <- training(datsplit) |> 
+  select(-id)
+test <- testing(datsplit) |> 
+  select(-id)
 ```
 
-# Data Visualization and featurePlot
+### Data Visualization and featurePlot
+
 ```{r,warning=FALSE}
 # visualization using train data
 # continuous: age, bmi, tumor_size, lymph_nodes, Ki67
@@ -138,6 +151,7 @@ Notice that:
 
 `hormonal_therapy`: Patients receiving hormonal therapy had markedly higher log_PFS (F = 89.6, p < 0.001)
 
+### ANOVA  
 ```{r}
 cat_vars <- c("stage", "tumor_grade", "ER", "PR", "HER2", 
               "menopause", "surgery", "chemo", "hormonal_therapy")
@@ -159,3 +173,105 @@ for(i in seq_along(cat_vars)){
 anova_results
 ```
 
+## Model Selection   
+Since the response variable, log-transformed PFS, is continuous, a linear regression model was considered appropriate. Exploratory data analysis showed that most continuous predictors had approximately linear relationships with log_PFS, with only mild non-linearity observed for BMI. Therefore, linear regression was used as the primary modeling approach.
+
+Boxplots of categorical variables also suggested differences in log_PFS across groups, indicating their potential relevance in the model.
+
+### Base model (linear)   
+```{r, linear regression 1}
+set.seed(123)
+
+lm_fit <- lm(log_PFS ~ . , data = train)
+summary(lm_fit)
+```
+The multiple linear regression model was statistically significant (p < 0.001), with an R² of `r summary(lm_fit)$r.squared` and adjusted R² of `r summary(lm_fit)$adj.r.squared`, indicating that approximately `r round(summary(lm_fit)$r.squared,2)*100`% of the variability in log-transformed PFS was explained by the predictors. However, several variables were not statistically significant, suggesting potential over-parameterization.
+
+```{r, lmA rmse}
+pred <- predict(lm_fit, newdata = test)
+rmse_lm <- sqrt(mean((test$log_PFS - pred)^2))
+```
+
+### Alternative model: lasso/Ridge/Elastic Net   
+To improve model parsimony and reduce potential overfitting, LASSO regression was applied for variable selection. Ridge and Elastic Net models were also fitted to evaluate the effect of regularization and compare predictive performance.
+
+```{r, preparing data for glmnet}
+x_train <- model.matrix(log_PFS ~ ., data = train)[, -1]
+y_train <- train$log_PFS
+
+x_test  <- model.matrix(log_PFS ~ ., data = test)[, -1]
+y_test  <- test$log_PFS
+```
+
+```{r, LASSO 1}
+set.seed(123)
+cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1)
+
+plot(cv_lasso)
+
+best_lambda_lasso <- cv_lasso$lambda.min
+
+pred_lasso <- predict(cv_lasso, s = "lambda.min", newx = x_test)
+rmse_lasso <- sqrt(mean((y_test - pred_lasso)^2))
+```
+
+```{r, Ridge 1}
+set.seed(123)
+cv_ridge <- cv.glmnet(x_train, y_train, alpha = 0)
+
+plot(cv_ridge)
+
+pred_ridge <- predict(cv_ridge, s = "lambda.min", newx = x_test)
+rmse_ridge <- sqrt(mean((y_test - pred_ridge)^2))
+
+```
+
+```{r, Elastic Net 1}
+set.seed(123)
+cv_enet <- cv.glmnet(x_train, y_train, alpha = 0.5)
+
+plot(cv_enet)
+
+pred_enet <- predict(cv_enet, s = "lambda.min", newx = x_test)
+rmse_enet <- sqrt(mean((y_test - pred_enet)^2))
+```
+
+```{r}
+rmse_results <- data.frame(
+  Model = c("Linear Regression", "LASSO", "Ridge", "Elastic Net"),
+  RMSE = c(rmse_lm, rmse_lasso, rmse_ridge, rmse_enet)
+)
+
+rmse_results |> 
+  arrange(RMSE)
+```
+
+As shows above, LASSO achieved the lowest RMSE (0.730), followed closely by Elastic Net, while Ridge and the linear regression model showed slightly higher RMSE values. However, the differences were minimal, indicating that regularization provided only marginal improvement and that the model is relatively stable.
+
+Ridge regression, which applies coefficient shrinkage without variable selection, showed similar performance to the linear regression model, suggesting that removing irrelevant predictors may be more beneficial than shrinkage alone.
+
+Although regularized models achieved slightly lower RMSE, the improvement was minimal (<1%), suggesting that the linear regression model already captures most of the signal.
+
+Therefore, LASSO was used as a guide for variable selection. Predictors with non-zero coefficients under λ_min were included in the final linear regression model to enhance interpretability while maintaining predictive performance.
+
+## Final model
+```{r, Check the remaining variables}
+coef(cv_lasso, s = "lambda.min")
+```
+
+```{r}
+set.seed(123)
+lm_fit_final <- lm(
+  log_PFS ~ age + race + tumor_size + tumor_grade +
+    lymph_nodes + ER + HER2 + Ki67 + surgery +
+    hormonal_therapy,
+  data = train
+)
+
+summary(lm_fit_final)
+
+pred <- predict(lm_fit, newdata = test)
+rmse_lm_final <- sqrt(mean((test$log_PFS - pred)^2))
+rmse_lm_final
+```
+Using cross-validated LASSO, five predictors were excluded from the model. The resulting model achieved comparable RMSE to the full linear regression model, suggesting that these variables contributed little to predictive performance. Therefore, a more parsimonious final model was obtained without sacrificing accuracy.
