@@ -18,6 +18,9 @@ library(patchwork)
 library(corrplot)
 library(glmnet)
 
+library(mgcv)
+library(earth)
+
 set.seed(123)
 ```
 
@@ -312,3 +315,56 @@ Using the final model from part A, we found that the RMSE increased from 0.75 to
 After slightly modifying the model by using the LASSO coefficients and selecting significant variables, we obtained a new model with a much lower RMSE, although the R-squared decreased slightly.
 
 I think this difference shows how things have changed over time. Medical treatments and technologies have improved, so some variables that were important before may no longer be as important now. However, some core variables are still important and remain in the model. Therefore, we need to make some adjustments to the model to better fit the new data.
+
+# **Testing Area**
+## GAM
+```{r}
+gam_fit_B <- gam(
+  log_PFS ~ 
+    age + 
+    menopause +
+    race +
+    s(bmi) +
+    s(tumor_size) + 
+    tumor_grade +
+    lymph_nodes + 
+    ER + 
+    PR +
+    HER2 + 
+    Ki67 + 
+    surgery + 
+    chemo +
+    hormonal_therapy,
+  data = datB,
+  method = "REML"
+)
+
+summary(gam_fit_B)
+plot(gam_fit_B, pages = 1, residuals = TRUE)
+```
+
+## RMSE/R^2
+```{r}
+pred_gam_B <- predict(gam_fit_B, newdata = datB)
+
+rmse_gam_B <- sqrt(mean((datB$log_PFS - pred_gam_B)^2))
+
+r2_gam_B <- 1 - sum((datB$log_PFS - pred_gam_B)^2) /
+  sum((datB$log_PFS - mean(datB$log_PFS))^2)
+
+rmse_gam_B
+r2_gam_B
+```
+
+## generalization
+```{r}
+pred_gam_B <- predict(gam_fit_B, newdata = datA)
+
+rmse_gam_B <- sqrt(mean((datA$log_PFS - pred_gam_B)^2))
+
+r2_gam_B <- 1 - sum((datA$log_PFS - pred_gam_B)^2) /
+  sum((datA$log_PFS - mean(datA$log_PFS))^2)
+
+rmse_gam_B
+r2_gam_B
+```
