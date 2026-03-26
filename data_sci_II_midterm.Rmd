@@ -288,6 +288,27 @@ rmse_b <- sqrt(mean((datB$log_PFS - pred_b)^2))
 r2_b   <- cor(datB$log_PFS, pred_b)^2
 rmse_b
 r2_b
-
+set.seed(123)
+datsplit_b<- initial_split(datB, prop = 0.8)
+train_b <- training(datsplit_b) |> select(-id)
+test_b  <- testing(datsplit_b) |> select(-id)
+lm_fit_b <- lm(log_PFS ~ ., data = train_b)
+summary(lm_fit_b)
+x_train_b <- model.matrix(log_PFS ~ ., data = train_b)[, -1]
+y_train_b <- train_b$log_PFS
+set.seed(123)
+cv_lasso_b <- cv.glmnet(x_train_b, y_train_b, alpha = 1)
+coef(cv_lasso_b, s = "lambda.min")
+lm_fit_b_final <- lm(log_PFS ~ age + bmi + tumor_size + lymph_nodes + ER + hormonal_therapy, data = train_b)
+summary(lm_fit_b)
+pred_b_final <- predict(lm_fit_b_final, newdata = test_b)
+rmse_b_final <- sqrt(mean((test_b$log_PFS - pred_b_final)^2))
+r2_b_final   <- cor(test_b$log_PFS, pred_b_final)^2
+rmse_b_final
+r2_b_final
 ```
-Using the final model we got from part A, we find that the Rmse increse from 0.75 to 0.83, and the R square of model decreased to 0.144. This result may indicate that using same model for part A doesn't generate well in this data set.
+Using the final model from part A, we found that the RMSE increased from 0.75 to 0.83, and the R-squared decreased to 0.144. This suggests that the model from part A does not generalize well to this new dataset.
+
+After slightly modifying the model by using the LASSO coefficients and selecting significant variables, we obtained a new model with a much lower RMSE, although the R-squared decreased slightly.
+
+I think this difference shows how things have changed over time. Medical treatments and technologies have improved, so some variables that were important before may no longer be as important now. However, some core variables are still important and remain in the model. Therefore, we need to make some adjustments to the model to better fit the new data.
