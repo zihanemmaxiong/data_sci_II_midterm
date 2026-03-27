@@ -94,10 +94,10 @@ trellis.par.set(theme1)
 featurePlot(x = train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")],
             y = train$log_PFS,
             plot = "scatter",
-            span = .5,
+            span = 0.5,
             labels = c("Predictors", "log_PFS"),
             type = c("p", "smooth"),
-            layout = c(3, 2))
+            layout=c(3,2))
 ```
 
 While looking at the features plots, we can observe that:
@@ -286,11 +286,16 @@ rmse_lm_final
 Using cross-validated LASSO, five predictors were excluded from the model. The resulting model achieved comparable RMSE to the full linear regression model, suggesting that these variables contributed little to predictive performance. Therefore, a more parsimonious final model was obtained without sacrificing accuracy.
 
 ```{r}
-pred_b<- predict(lm_fit_final, newdata = datB)
-rmse_b <- sqrt(mean((datB$log_PFS - pred_b)^2))
-r2_b   <- cor(datB$log_PFS, pred_b)^2
-rmse_b
-r2_b
+pred_B <- predict(lm_fit_final, newdata = datB)
+RMSE_B <- RMSE(pred_B, datB$log_PFS)
+R2_B   <- R2(pred_B, datB$log_PFS)
+
+RMSE_B
+R2_B
+```
+
+
+```{r}
 set.seed(123)
 datsplit_b<- initial_split(datB, prop = 0.8)
 train_b <- training(datsplit_b) |> select(-id)
@@ -299,6 +304,7 @@ lm_fit_b <- lm(log_PFS ~ ., data = train_b)
 summary(lm_fit_b)
 x_train_b <- model.matrix(log_PFS ~ ., data = train_b)[, -1]
 y_train_b <- train_b$log_PFS
+
 set.seed(123)
 cv_lasso_b <- cv.glmnet(x_train_b, y_train_b, alpha = 1)
 coef(cv_lasso_b, s = "lambda.min")
@@ -307,6 +313,7 @@ summary(lm_fit_b)
 pred_b_final <- predict(lm_fit_b_final, newdata = test_b)
 rmse_b_final <- sqrt(mean((test_b$log_PFS - pred_b_final)^2))
 r2_b_final   <- cor(test_b$log_PFS, pred_b_final)^2
+
 rmse_b_final
 r2_b_final
 ```
@@ -368,3 +375,6 @@ r2_gam_B <- 1 - sum((datA$log_PFS - pred_gam_B)^2) /
 rmse_gam_B
 r2_gam_B
 ```
+
+
+
