@@ -1,0 +1,448 @@
+---
+title: "data_sci_II_midterm_v1"
+author: "Zihan Xiong"
+date: "2026-03-27"
+output: html_document
+---
+
+---
+title: "Data Science II Midterm Project"
+author: "Midterm Project Group 29"
+date: "2026-03-24"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: false
+    theme: cosmo
+---
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+library(tidyverse)
+library(caret)
+library(ggplot2)
+library(tidymodels)
+library(patchwork)
+library(corrplot)
+library(glmnet)
+
+library(mgcv)
+library(earth)
+
+set.seed(123)
+```
+
+# **Preparation and Inspection**  
+## Loading Data  
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+load("data/datA.RData")
+load("data/datB.RData")
+
+str(datA)
+str(datB)
+```
+
+## Set variable type, dimension, and data summary
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+datA <- datA |> 
+  mutate(
+    across(c(age, bmi, tumor_size, lymph_nodes, Ki67), as.numeric),
+    across(c(menopause, ER, PR, HER2, surgery, chemo, hormonal_therapy), factor),
+    race = factor(race),
+    tumor_grade = factor(tumor_grade),
+    stage = factor(stage)
+  )
+
+datB <- datB |> 
+  mutate(
+    across(c(age, bmi, tumor_size, lymph_nodes, Ki67), as.numeric),
+    across(c(menopause, ER, PR, HER2, surgery, chemo, hormonal_therapy), factor),
+    race = factor(race),
+    tumor_grade = factor(tumor_grade),
+    stage = factor(stage)
+  )
+
+dim(datA); summary(datA)
+dim(datB); summary(datB)
+```
+
+## Check for Missing Data   
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+colSums(is.na(datA))
+colSums(is.na(datB)) # Check if any data missing.
+```  
+
+# **Part 1: PFS model (1990 - 1995)**  
+
+## *○ Data Partition*
+
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+set.seed(123)
+# partition first, 0.8
+datsplit <- initial_split(datA, prop = 0.8)
+train <- training(datsplit) |> 
+  select(-id)
+test <- testing(datsplit) |> 
+  select(-id)
+```
+
+### Data Visualization and featurePlot
+
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+# visualization using train data
+# continuous: age, bmi, tumor_size, lymph_nodes, Ki67
+theme1 <- trellis.par.get()
+theme1$plot.symbol$col <- rgb(.2, .4, .2, .5)
+theme1$plot.symbol$pch <- 16
+theme1$plot.line$col <- rgb(.8, .1, .1, 1)
+theme1$plot.line$lwd <- 2
+theme1$strip.background$col <- rgb(.0, .2, .6, .2)
+trellis.par.set(theme1)
+
+featurePlot(x = train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")],
+            y = train$log_PFS,
+            plot = "scatter",
+            span = 0.5,
+            labels = c("Predictors", "log_PFS"),
+            type = c("p", "smooth"),
+            layout=c(3,2))
+```
+
+While looking at the features plots, we can observe that:
+
+`lymph_nodes`: negative relationship with log_PFS — more positive lymph nodes, shorter PFS. The trend appears approximately linear.
+
+`Ki67`: negative relationship with log_PFS. Higher proliferation index associated with shorter PFS, though the trend is relatively mild.
+
+`age`: very weak relationship. Smooth curve is flat.
+
+`bmi`: slight negative relationship. 
+
+`tumor_size`: ngeative relationship. larger tumor size associated with shorter PFS.
+
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+# also take a look at the Pearson correlation coefficient
+cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")], 
+    train$log_PFS)
+```
+
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+# corrplot, none r<0.8
+cor_matrix <- cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")])
+corrplot(cor_matrix, method = "number", type = "upper")
+```
+
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+# categorical: stage, tumor_grade, ER, PR, HER2, menopause, surgery, chemo, hormonal_therapy
+# I'm using box plot instead of the feature plot
+p1 <- ggplot(train, aes(x = stage, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p2 <- ggplot(train, aes(x = tumor_grade, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p3 <- ggplot(train, aes(x = ER, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p4 <- ggplot(train, aes(x = PR, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p5 <- ggplot(train, aes(x = HER2, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p6 <- ggplot(train, aes(x = menopause, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p7 <- ggplot(train, aes(x = surgery, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p8 <- ggplot(train, aes(x = chemo, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+p9 <- ggplot(train, aes(x = hormonal_therapy, y = log_PFS)) + 
+      geom_boxplot() + theme_bw()
+(p1 + p2 + p3) / (p4 + p5 + p6) / (p7 + p8 + p9)
+```
+
+Notice that:
+
+`stage`: Stage 1 patients having the highest log_PFS and Stage 3 the lowest (F = 81.0, p < 0.001), more advanced disease stage is associated with shorter PFS.
+
+`tumor_grade`: Grade 1 patients had notably higher log_PFS, poorer tumor differentiation is associated with worse prognosis.
+
+`ER`: ER-positive patients had substantially higher log_PFS than ER-negative patients (F = 138.4, p < 0.001)
+
+`hormonal_therapy`: Patients receiving hormonal therapy had markedly higher log_PFS (F = 89.6, p < 0.001)
+
+### ANOVA  
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+cat_vars <- c("stage", "tumor_grade", "ER", "PR", "HER2", 
+              "menopause", "surgery", "chemo", "hormonal_therapy")
+
+anova_results <- data.frame(
+  Variable = cat_vars,
+  F_value = NA,
+  P_value = NA
+)
+
+for(i in seq_along(cat_vars)){
+  fit <- aov(log_PFS ~ train[[cat_vars[i]]], data = train)
+  f_val <- summary(fit)[[1]]$`F value`[1]
+  p_val <- summary(fit)[[1]]$`Pr(>F)`[1]
+  anova_results$F_value[i] <- round(f_val, 3)
+  anova_results$P_value[i] <- round(p_val, 4)
+}
+
+anova_results
+```
+
+## resampling and re-build the models
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+set.seed(123)
+folds <- createMultiFolds(train$log_PFS, k = 10, times = 5)
+
+ctrl <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 5,
+  index = folds
+)
+
+# LM
+
+lm_fit <- train(log_PFS ~ ., data = train, method = "lm", metric = "RMSE", trControl = ctrl)
+
+# Ridge
+
+ridge_fit <- train(log_PFS ~ ., data = train, method = "glmnet", metric = "RMSE",
+                   tuneGrid = expand.grid(alpha = 0, lambda = exp(seq(-5, 5, length = 100))),
+                   trControl = ctrl)
+
+# Lasso
+
+lasso_fit <- train(log_PFS ~ ., data = train, method = "glmnet", metric = "RMSE",
+                   tuneGrid = expand.grid(alpha = 1, lambda = exp(seq(-5, 2, length = 100))),
+                   trControl = ctrl)
+
+# Elastic Net
+
+enet_fit <- train(log_PFS ~ ., data = train, method = "glmnet", metric = "RMSE",
+                  tuneGrid = expand.grid(alpha = seq(0, 1, length = 21),
+                                         lambda = exp(seq(-5, 5, length = 100))),
+                  trControl = ctrl)
+
+# GAM 
+
+gam_fit <- train(log_PFS ~ ., data = train, method = "gam",  metric = "RMSE", trControl = ctrl)
+
+# MARS
+
+mars_fit <- train(log_PFS ~ ., data = train, method = "earth", metric = "RMSE",
+                  tuneGrid = expand.grid(degree = 1:3, nprune = 2:20),
+                  trControl = ctrl)
+# compare
+resamp <- resamples(list(LM = lm_fit, Ridge = ridge_fit, Lasso = lasso_fit,
+                         ENet = enet_fit, GAM = gam_fit, MARS = mars_fit))
+summary(resamp)
+bwplot(resamp, metric = "RMSE")
+```
+
+
+
+
+## Model selection based on the resampling results
+
+If we choose to use GAM as the final model:
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+# GAM as final model
+summary(gam_fit$finalModel)
+plot(gam_fit$finalModel, pages = 1)
+
+# Test set evaluation
+gam_pred <- predict(gam_fit, newdata = test)
+gam_test_rmse <- sqrt(mean((test$log_PFS - gam_pred)^2))
+gam_test_r2 <- cor(test$log_PFS, gam_pred)^2
+gam_test_rmse
+gam_test_r2
+```
+
+## Generalization GAM on datB
+```{r}
+## generalization on datB
+# GAM trained on datA, predict on entire datB
+gam_pred_datB <- predict(gam_fit, newdata = datB)
+
+gam_rmse_datB <- sqrt(mean((datB$log_PFS - gam_pred_datB)^2))
+gam_r2_datB <- cor(datB$log_PFS, gam_pred_datB)^2
+
+gam_rmse_datB
+gam_r2_datB
+```
+
+## split
+```{r}
+set.seed(123)
+datsplit_b <- initial_split(datB, prop = 0.8)
+train_b <- training(datsplit_b) |> select(-id)
+test_b  <- testing(datsplit_b) |> select(-id)
+```
+
+## re-build models on datB
+```{r}
+# resampling setup
+set.seed(123)
+folds_b <- createMultiFolds(train_b$log_PFS, k = 10, times = 5)
+ctrl_b <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 5,
+  index = folds_b
+)
+
+# LM
+lm_fit_b <- train(log_PFS ~ ., data = train_b, method = "lm", metric = "RMSE", trControl = ctrl_b)
+# Ridge
+ridge_fit_b <- train(log_PFS ~ ., data = train_b, method = "glmnet", metric = "RMSE",
+                     tuneGrid = expand.grid(alpha = 0, lambda = exp(seq(-5, 5, length = 50))),
+                     trControl = ctrl_b)
+# Lasso
+lasso_fit_b <- train(log_PFS ~ ., data = train_b, method = "glmnet", metric = "RMSE",
+                     tuneGrid = expand.grid(alpha = 1, lambda = exp(seq(-5, 2, length = 50))),
+                     trControl = ctrl_b)
+# Elastic Net
+enet_fit_b <- train(log_PFS ~ ., data = train_b, method = "glmnet", metric = "RMSE",
+                    tuneGrid = expand.grid(alpha = seq(0, 1, length = 11),
+                                           lambda = exp(seq(-5, 5, length = 50))),
+                    trControl = ctrl_b)
+
+# GAM 
+gam_fit_b <- train(log_PFS ~ ., data = train_b, method = "gam", metric = "RMSE", trControl = ctrl_b)
+# MARS
+mars_fit_b <- train(log_PFS ~ ., data = train_b, method = "earth", metric = "RMSE",
+                    tuneGrid = expand.grid(degree = 1:3, nprune = 2:20),
+                    trControl = ctrl_b)
+
+# compare
+resamp_b <- resamples(list(LM = lm_fit_b, Ridge = ridge_fit_b, Lasso = lasso_fit_b,
+                           ENet = enet_fit_b, GAM = gam_fit_b, MARS = mars_fit_b))
+summary(resamp_b)
+bwplot(resamp_b, metric = "RMSE")
+```
+
+## GAM comparison across cohorts
+```{r}
+# datA GAM summary and smooth curves
+summary(gam_fit$finalModel)
+plot(gam_fit$finalModel, pages = 1)
+
+# datB GAM summary and smooth curves
+summary(gam_fit_b$finalModel)
+plot(gam_fit_b$finalModel, pages = 1)
+
+# datB test set evaluation
+gam_pred_b <- predict(gam_fit_b, newdata = test_b)
+gam_test_rmse_b <- sqrt(mean((test_b$log_PFS - gam_pred_b)^2))
+gam_test_r2_b <- cor(test_b$log_PFS, gam_pred_b)^2
+gam_test_rmse_b
+gam_test_r2_b
+```
+
+GAM before generalization RMSE: 0.840
+after: 0.731265
+
+
+## Model selection based on the resampling results
+
+If we want to choose LASSO as our final model:
+
+```{r}
+# if we choose to use LASSO as the final model (because of easier interpretation)
+lasso_pred <- predict(lasso_fit, newdata = test)
+lasso_test_rmse <- sqrt(mean((test$log_PFS - lasso_pred)^2))
+lasso_test_r2 <- cor(test$log_PFS, lasso_pred)^2
+
+lasso_test_rmse
+lasso_test_r2
+
+# Lasso coefficients
+coef(lasso_fit$finalModel, lasso_fit$bestTune$lambda)
+
+```
+
+## generalization on datB
+```{r}
+# if we select LASSO
+lasso_pred_datB <- predict(lasso_fit, newdata = datB)
+
+lasso_rmse_datB <- sqrt(mean((datB$log_PFS - lasso_pred_datB)^2))
+lasso_r2_datB <- cor(datB$log_PFS, lasso_pred_datB)^2
+
+lasso_rmse_datB
+lasso_r2_datB
+```
+
+## split
+```{r}
+set.seed(123)
+datsplit_b <- initial_split(datB, prop = 0.8)
+train_b <- training(datsplit_b) |> select(-id)
+test_b  <- testing(datsplit_b) |> select(-id)
+```
+
+## re-build models on datB
+```{r}
+# resampling setup
+set.seed(123)
+folds_b <- createMultiFolds(train_b$log_PFS, k = 10, times = 5)
+ctrl_b <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 5,
+  index = folds_b
+)
+
+# LM
+lm_fit_b <- train(log_PFS ~ ., data = train_b, method = "lm", metric = "RMSE", trControl = ctrl_b)
+# Ridge
+ridge_fit_b <- train(log_PFS ~ ., data = train_b, method = "glmnet", metric = "RMSE",
+                     tuneGrid = expand.grid(alpha = 0, lambda = exp(seq(-5, 5, length = 50))),
+                     trControl = ctrl_b)
+# Lasso
+lasso_fit_b <- train(log_PFS ~ ., data = train_b, method = "glmnet", metric = "RMSE",
+                     tuneGrid = expand.grid(alpha = 1, lambda = exp(seq(-5, 2, length = 50))),
+                     trControl = ctrl_b)
+# Elastic Net
+enet_fit_b <- train(log_PFS ~ ., data = train_b, method = "glmnet", metric = "RMSE",
+                    tuneGrid = expand.grid(alpha = seq(0, 1, length = 11),
+                                           lambda = exp(seq(-5, 5, length = 50))),
+                    trControl = ctrl_b)
+
+# GAM 
+gam_fit_b <- train(log_PFS ~ ., data = train_b, method = "gam", metric = "RMSE", trControl = ctrl_b)
+# MARS
+mars_fit_b <- train(log_PFS ~ ., data = train_b, method = "earth", metric = "RMSE",
+                    tuneGrid = expand.grid(degree = 1:3, nprune = 2:20),
+                    trControl = ctrl_b)
+
+# compare
+resamp_b <- resamples(list(LM = lm_fit_b, Ridge = ridge_fit_b, Lasso = lasso_fit_b,
+                           ENet = enet_fit_b, GAM = gam_fit_b, MARS = mars_fit_b))
+summary(resamp_b)
+bwplot(resamp_b, metric = "RMSE")
+```
+
+## coefficient of LASSO
+```{r}
+# datA coefficient lasso
+coef(lasso_fit$finalModel, lasso_fit$bestTune$lambda)
+# datB coefficient lasso
+coef(lasso_fit_b$finalModel, lasso_fit_b$bestTune$lambda)
+```
+
+## coefficient of GAM
+```{r}
+# automatically non-linear variables by caret
+# datA
+summary(gam_fit$finalModel)
+plot(gam_fit$finalModel)
+#datB
+summary(gam_fit_b$finalModel)
+plot(gam_fit_b$finalModel)
+```
+
+懒得打英语了hhh,可以对比一下lasso和gam,共同点:
+1. HER2效应消失
+2. bmi的非线性
+我觉得重点我们可以解释模型的前后coefficient的变化
+
