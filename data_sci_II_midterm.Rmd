@@ -41,7 +41,8 @@ datA <- datA |>
     race = factor(race),
     tumor_grade = factor(tumor_grade),
     stage = factor(stage)
-  )
+  ) |> 
+  select(-id)
 
 datB <- datB |> 
   mutate(
@@ -50,7 +51,8 @@ datB <- datB |>
     race = factor(race),
     tumor_grade = factor(tumor_grade),
     stage = factor(stage)
-  )
+  ) |> 
+  select(-id)
 
 dim(datA); summary(datA)
 dim(datB); summary(datB)
@@ -70,10 +72,8 @@ colSums(is.na(datB))
 set.seed(123)
 # partition first, 0.8
 datsplit <- initial_split(datA, prop = 0.8)
-train <- training(datsplit) |> 
-  select(-id)
-test <- testing(datsplit) |> 
-  select(-id)
+train <- training(datsplit)
+test <- testing(datsplit)
 ```
 
 ### Data Visualization and featurePlot
@@ -282,8 +282,9 @@ The predictive performance of all candidate models was highly comparable, with o
 Given the similar performance and the advantage of interpretability, the linear model was selected as the final model.
 ```{r}
 set.seed(123)
+lm_fit_datA <- lm(log_PFS ~ . , data = train)
 
-lm_pred <- predict(lm_fit, newdata = test)
+lm_pred <- predict(lm_fit_datA, newdata = test)
 
 lm_test_rmse <- sqrt(mean((test$log_PFS - lm_pred)^2))
 lm_test_r2 <- cor(test$log_PFS, lm_pred)^2
@@ -291,3 +292,105 @@ lm_test_r2 <- cor(test$log_PFS, lm_pred)^2
 lm_test_rmse
 lm_test_r2
 ```
+# **Part 2: PFS model (2000 - 2005)**  
+## Generalization lm on datB
+
+```{r}
+set.seed(123)
+pred_b <- predict(lm_fit, newdata = datB)
+lm_rmse_datB <- sqrt(mean((datB$log_PFS - pred_b)^2))
+lm_r2_datB <- cor(datB$log_PFS, pred_b)^2
+
+lm_rmse_datB
+lm_r2_datB
+```
+
+The model does not generalize well to the new dataset. This is evidenced by the increase in RMSE (from `r lm_test_rmse` to `r lm_rmse_datB`) and the decrease in R-squared (from `r lm_test_r2` to `r lm_r2_datB`) when applied to datB, indicating reduced predictive accuracy and explanatory power.
+
+This lack of generalizability may be attributed to differences between the two cohorts, including potential changes in patient characteristics, treatment strategies, and underlying data distributions over time. As a result, the relationships between predictors and progression-free survival may have shifted, limiting the applicability of the original model.
+
+## *○ Refiting Model*  
+
+```{r}
+set.seed(123)
+datsplit_b <- initial_split(datB, prop = 0.8)
+train_b <- training(datsplit_b)
+test_b  <- testing(datsplit_b)
+```
+
+```{r}
+set.seed(123)
+
+lm_fit_datB <- lm(log_PFS ~ . , data = train_b)
+summary(lm_fit_datB)
+
+pred_b <- predict(lm_fit_datB, newdata = test_b)
+lm_rmse <- sqrt(mean((test_b$log_PFS - pred_b)^2))
+lm_r2 <- cor(test_b$log_PFS, pred_b)^2
+
+lm_rmse
+lm_r2
+```
+## compare 
+```{r}
+summary(lm_fit_datA)
+summary(lm_fit_datB)
+```
+
+### 显著性变化
+race4             -0.0459674  0.0533276  -0.862 0.388828    
+race4(Hispanic)    0.087417   0.046939   1.862   0.0627 .  
+
+tumor_size        -0.0750896  0.0220385  -3.407 0.000673 ***
+tumor_grade2      -0.0821805  0.0514670  -1.597 0.110519    
+tumor_grade3      -0.1850927  0.0661012  -2.800 0.005170 ** 
+lymph_nodes       -0.0563520  0.0106908  -5.271 1.54e-07 ***
+ER1                0.2416039  0.0576110   4.194 2.90e-05 ***
+
+tumor_size        -0.048160   0.021006  -2.293   0.0220 *  
+tumor_grade2       0.074816   0.046435   1.611   0.1073    
+tumor_grade3      -0.118607   0.063932  -1.855   0.0638 .  
+lymph_nodes       -0.022620   0.010988  -2.059   0.0397 *  
+ER1                0.157815   0.061828   2.552   0.0108 *  
+
+
+HER21             -0.2036883  0.0426737  -4.773 1.98e-06 ***
+HER21              0.035627   0.039715   0.897   0.3698    
+
+Ki67              -0.0047432  0.0021852  -2.171 0.030110 *  
+Ki67              -0.003995   0.002172  -1.839   0.0661 .  
+
+hormonal_therapy1  0.1339154  0.0440594   3.039 0.002409 ** 
+hormonal_therapy1  0.220510   0.050064   4.405 1.13e-05 ***
+
+### 系数变化
+```{r}
+coef_A <- coef(lm_fit_datA)
+coef_B <- coef(lm_fit_datB)
+
+cbind(coef_A, coef_B, diff = coef_B - coef_A)
+```
+#### 值得关注的
+tumor_size        -0.0750895606 -0.048159542  0.0269300189  *** to *
+
+lymph_nodes       -0.0563519761 -0.022620246  0.0337317301  *** to *
+ER1                0.2416039362  0.157814538 -0.0837893984  *** to *
+
+hormonal_therapy1  0.1339153865  0.220509607  0.0865942203
+
+Ki67              -0.0047432092 -0.003995138  0.0007480714  * to . (tiny changes)
+
+#### Inversed
+
+HER21             -0.2036882502  0.035626644  0.2393148946  *** to Not significant
+tumor_grade2      -0.0821804643  0.074815894  0.1569963580  (Not significant/Very close to 0.1)
+tumor_grade3      -0.1850926774 -0.118606958  0.0664857196  ** to .
+
+stage3             0.1124813977 -0.061369518 -0.1738509159  (Not significant)
+
+race2              0.0718054151 -0.039498119 -0.1113035343  (Not significant)
+race3              0.0876697825 -0.024541361 -0.1122111439  (Not significant)
+race4             -0.0459674416  0.087417474  0.1333849160  (Not significant)
+
+## 我感觉这里不需要再跑一次一整个caret比较rmse了，毕竟老师问的重点是what has changed in prediction ## 
+## 后面是EDA
