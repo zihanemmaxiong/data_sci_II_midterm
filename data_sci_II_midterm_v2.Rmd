@@ -245,6 +245,7 @@ bwplot(resamp, metric = "RMSE")
 
 If we choose to use GAM as the final model:
 ```{r,warning=FALSE, message=FALSE,echo=FALSE}
+set.seed(123)
 # GAM as final model
 summary(gam_fit$finalModel)
 plot(gam_fit$finalModel, pages = 1)
@@ -259,6 +260,7 @@ gam_test_r2
 
 ## Generalization GAM on datB
 ```{r}
+set.seed(123)
 ## generalization on datB
 # GAM trained on datA, predict on entire datB
 gam_pred_datB <- predict(gam_fit, newdata = datB)
@@ -322,6 +324,7 @@ bwplot(resamp_b, metric = "RMSE")
 
 ## GAM comparison across cohorts
 ```{r}
+set.seed(123)
 # datA GAM summary and smooth curves
 summary(gam_fit$finalModel)
 plot(gam_fit$finalModel, pages = 1)
@@ -347,6 +350,7 @@ after: 0.731265
 If we want to choose LASSO as our final model:
 
 ```{r}
+set.seed(123)
 # if we choose to use LASSO as the final model (because of easier interpretation)
 lasso_pred <- predict(lasso_fit, newdata = test)
 lasso_test_rmse <- sqrt(mean((test$log_PFS - lasso_pred)^2))
@@ -362,6 +366,7 @@ coef(lasso_fit$finalModel, lasso_fit$bestTune$lambda)
 
 ## generalization on datB
 ```{r}
+set.seed(123)
 # if we select LASSO
 lasso_pred_datB <- predict(lasso_fit, newdata = datB)
 
@@ -424,6 +429,7 @@ bwplot(resamp_b, metric = "RMSE")
 
 ## coefficient of LASSO
 ```{r}
+set.seed(123)
 # datA coefficient lasso
 coef(lasso_fit$finalModel, lasso_fit$bestTune$lambda)
 # datB coefficient lasso
@@ -432,6 +438,7 @@ coef(lasso_fit_b$finalModel, lasso_fit_b$bestTune$lambda)
 
 ## coefficient of GAM
 ```{r}
+set.seed(123)
 # automatically non-linear variables by caret
 # datA
 summary(gam_fit$finalModel)

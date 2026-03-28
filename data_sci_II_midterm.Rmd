@@ -20,8 +20,6 @@ library(glmnet)
 
 library(mgcv)
 library(earth)
-
-set.seed(123)
 ```
 
 # **Preparation and Inspection**  
@@ -60,7 +58,7 @@ dim(datB); summary(datB)
 ## Check for Missing Data   
 ```{r}
 colSums(is.na(datA))
-colSums(is.na(datB)) # Check if any data missing.
+colSums(is.na(datB))
 ```   
 
 
@@ -108,9 +106,21 @@ While looking at the features plots, we can observe that:
 
 `age`: very weak relationship. Smooth curve is flat.
 
-`bmi`: slight negative relationship. 
+`bmi`: slight nonlinear, weak relationship. 
 
 `tumor_size`: ngeative relationship. larger tumor size associated with shorter PFS.
+
+As `bmi` and `tumor_size` shows the possibility of nonlinear relationships, a GAM was employed to evaluate whether nonlinear effects should be incorporated into the model.
+```{r}
+set.seed(123)
+fit <- gam(
+  log_PFS ~ s(age) + menopause + race + s(bmi) + s(tumor_size) + tumor_grade + 
+    s(lymph_nodes) + ER + PR + HER2 + s(Ki67) + surgery + chemo + hormonal_therapy,
+  data = datA,
+  method = "REML")
+summary(fit)
+```
+The GAM analysis indicated that BMI exhibited clear nonlinear effects, while tumor size showed mild nonlinearity. Therefore, flexible models such as GAM and MARS were considered as candidate models.
 
 ```{r}
 # also take a look at the Pearson correlation coefficient
@@ -122,6 +132,8 @@ cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")],
 cor_matrix <- cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")])
 corrplot(cor_matrix, method = "number", type = "upper")
 ```
+
+Tumor size and lymph node count showed moderate-to-high correlation (r ≈ 0.70), suggesting potential multicollinearity. However, both variables are clinically meaningful and were retained in the model.
 
 ```{r}
 # categorical: stage, tumor_grade, ER, PR, HER2, menopause, surgery, chemo, hormonal_therapy
@@ -182,6 +194,8 @@ anova_results
 ## *○ Model Selection*   
 Since the response variable, log-transformed PFS, is continuous, a linear regression model was considered appropriate. Exploratory data analysis showed that most continuous predictors had approximately linear relationships with log_PFS, with only mild non-linearity observed for BMI. Therefore, linear regression was used as the primary modeling approach.
 
+In addition, given the evidence of nonlinear effects between log(PFS) and BMI, flexible models such as GAM and MARS were also considered as candidate models.
+
 Boxplots of categorical variables also suggested differences in log_PFS across groups, indicating their potential relevance in the model.
 
 ### Base model (linear)   
@@ -191,190 +205,89 @@ set.seed(123)
 lm_fit <- lm(log_PFS ~ . , data = train)
 summary(lm_fit)
 ```
-The multiple linear regression model was statistically significant (p < 0.001), with an R² of `r summary(lm_fit)$r.squared` and adjusted R² of `r summary(lm_fit)$adj.r.squared`, indicating that approximately `r round(summary(lm_fit)$r.squared,2)*100`% of the variability in log-transformed PFS was explained by the predictors. However, several variables were not statistically significant, suggesting potential over-parameterization.
+The multiple linear regression model was statistically significant (p < 0.001), with an R² of `r summary(lm_fit)$r.squared` and adjusted R² of `r summary(lm_fit)$adj.r.squared`, indicating that approximately `r round(summary(lm_fit)$r.squared,2)*100`% of the variability in log-transformed PFS was explained by the predictors.
 
-```{r, lmA rmse}
-pred <- predict(lm_fit, newdata = test)
-rmse_lm <- sqrt(mean((test$log_PFS - pred)^2))
-```
+### Resampling and Alternative models   
+Considering the potential limitations of linear models in predictive performance, and given that exploratory analysis suggested the presence of nonlinear relationships among some variables, more flexible models such as GAM and MARS were introduced to capture potential nonlinear effects. 
 
-### Alternative model
-To improve model parsimony and reduce potential overfitting, LASSO regression was applied for variable selection. Ridge and Elastic Net models were also fitted to evaluate the effect of regularization and compare predictive performance.
+In addition, given the possible correlations among predictors, regularization methods including Ridge, LASSO, and Elastic Net were further considered to improve model stability and generalization. 
 
-```{r, preparing data for glmnet}
-x_train <- model.matrix(log_PFS ~ ., data = train)[, -1]
-y_train <- train$log_PFS
+Finally, all candidate models were evaluated and compared using cross-validated RMSE implemented via the caret package.
 
-x_test  <- model.matrix(log_PFS ~ ., data = test)[, -1]
-y_test  <- test$log_PFS
-```
-
-#### LASSO regression
-```{r, LASSO 1}
+#### Cross-validation setup
+```{r, Cross validation setup}
 set.seed(123)
-cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1)
+folds <- createMultiFolds(train$log_PFS, k = 10, times = 5)
 
-plot(cv_lasso)
-
-best_lambda_lasso <- cv_lasso$lambda.min
-
-pred_lasso <- predict(cv_lasso, s = "lambda.min", newx = x_test)
-rmse_lasso <- sqrt(mean((y_test - pred_lasso)^2))
-```
-#### Ridge regression
-```{r, Ridge 1}
-set.seed(123)
-cv_ridge <- cv.glmnet(x_train, y_train, alpha = 0)
-
-plot(cv_ridge)
-
-pred_ridge <- predict(cv_ridge, s = "lambda.min", newx = x_test)
-rmse_ridge <- sqrt(mean((y_test - pred_ridge)^2))
-
+ctrl <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 5,
+  index = folds
+)
 ```
 
-#### Elastic net regression
-```{r, Elastic Net 1}
+#### Linear Model and Regularized Models
+```{r, Linear}
 set.seed(123)
-cv_enet <- cv.glmnet(x_train, y_train, alpha = 0.5)
+# LM
 
-plot(cv_enet)
+lm_fit <- train(log_PFS ~ ., data = train, method = "lm", metric = "RMSE", trControl = ctrl)
 
-pred_enet <- predict(cv_enet, s = "lambda.min", newx = x_test)
-rmse_enet <- sqrt(mean((y_test - pred_enet)^2))
+# Ridge
+
+ridge_fit <- train(log_PFS ~ ., data = train, method = "glmnet", metric = "RMSE",
+                   tuneGrid = expand.grid(alpha = 0, lambda = exp(seq(-5, 5, length = 100))),
+                   trControl = ctrl)
+
+# Lasso
+
+lasso_fit <- train(log_PFS ~ ., data = train, method = "glmnet", metric = "RMSE",
+                   tuneGrid = expand.grid(alpha = 1, lambda = exp(seq(-5, 2, length = 100))),
+                   trControl = ctrl)
+
+# Elastic Net
+
+enet_fit <- train(log_PFS ~ ., data = train, method = "glmnet", metric = "RMSE",
+                  tuneGrid = expand.grid(alpha = seq(0, 1, length = 21),
+                                         lambda = exp(seq(-5, 5, length = 100))),
+                  trControl = ctrl)
+```
+
+#### Nonlinear Models
+```{r, Nonlinear}
+set.seed(123)
+# GAM 
+
+gam_fit <- train(log_PFS ~ ., data = train, method = "gam",  metric = "RMSE", trControl = ctrl)
+
+# MARS
+
+mars_fit <- train(log_PFS ~ ., data = train, method = "earth", metric = "RMSE",
+                  tuneGrid = expand.grid(degree = 1:3, nprune = 2:20),
+                  trControl = ctrl)
 ```
 
 ### RMSE results
 ```{r}
-rmse_results <- data.frame(
-  Model = c("Linear Regression", "LASSO", "Ridge", "Elastic Net"),
-  RMSE = c(rmse_lm, rmse_lasso, rmse_ridge, rmse_enet)
-)
-
-rmse_results |> 
-  arrange(RMSE)
+resamp <- resamples(list(LM = lm_fit, Ridge = ridge_fit, Lasso = lasso_fit,
+                         ENet = enet_fit, GAM = gam_fit, MARS = mars_fit))
+summary(resamp)
+bwplot(resamp, metric = "RMSE")
 ```
 
-As shows above, LASSO achieved the lowest RMSE (0.7413), followed closely by Elastic Net, while Ridge and the linear regression model showed slightly higher RMSE values. However, the differences were minimal, indicating that regularization provided only marginal improvement and that the model is relatively stable.
+The predictive performance of all candidate models was highly comparable, with only minimal differences in RMSE. Although GAM achieved the lowest RMSE, the improvement over the linear model was negligible (<1%), suggesting that increased model flexibility did not lead to meaningful gains in predictive performance, the linear regression model already captures most of the signal. 
 
-Ridge regression, which applies coefficient shrinkage without variable selection, showed similar performance to the linear regression model, suggesting that removing irrelevant predictors may be more beneficial than shrinkage alone.
-
-Although regularized models achieved slightly lower RMSE, the improvement was minimal (<1%), suggesting that the linear regression model already captures most of the signal.
-
-Therefore, LASSO was used as a guide for variable selection. Predictors with non-zero coefficients under λ_min were included in the final linear regression model to enhance interpretability while maintaining predictive performance.
-
-## *○ Final model*
-```{r, Check the remaining variables}
-coef(cv_lasso, s = "lambda.min")
-```
-
+## *○ Final model*   
+Given the similar performance and the advantage of interpretability, the linear model was selected as the final model.
 ```{r}
 set.seed(123)
-lm_fit_final <- lm(
-  log_PFS ~ age + race + tumor_size + tumor_grade +
-    lymph_nodes + ER + HER2 + Ki67 + surgery +
-    hormonal_therapy,
-  data = train
-)
 
-summary(lm_fit_final)
+lm_pred <- predict(lm_fit, newdata = test)
 
-pred <- predict(lm_fit_final, newdata = test)
-rmse_lm_final <- sqrt(mean((test$log_PFS - pred)^2))
-rmse_lm_final
+lm_test_rmse <- sqrt(mean((test$log_PFS - lm_pred)^2))
+lm_test_r2 <- cor(test$log_PFS, lm_pred)^2
+
+lm_test_rmse
+lm_test_r2
 ```
-Using cross-validated LASSO, five predictors were excluded from the model. The resulting model achieved comparable RMSE to the full linear regression model, suggesting that these variables contributed little to predictive performance. Therefore, a more parsimonious final model was obtained without sacrificing accuracy.
-
-```{r}
-pred_B <- predict(lm_fit_final, newdata = datB)
-RMSE_B <- RMSE(pred_B, datB$log_PFS)
-R2_B   <- R2(pred_B, datB$log_PFS)
-
-RMSE_B
-R2_B
-```
-
-
-```{r}
-set.seed(123)
-datsplit_b<- initial_split(datB, prop = 0.8)
-train_b <- training(datsplit_b) |> select(-id)
-test_b  <- testing(datsplit_b) |> select(-id)
-lm_fit_b <- lm(log_PFS ~ ., data = train_b)
-summary(lm_fit_b)
-x_train_b <- model.matrix(log_PFS ~ ., data = train_b)[, -1]
-y_train_b <- train_b$log_PFS
-
-set.seed(123)
-cv_lasso_b <- cv.glmnet(x_train_b, y_train_b, alpha = 1)
-coef(cv_lasso_b, s = "lambda.min")
-lm_fit_b_final <- lm(log_PFS ~ age + bmi + tumor_size + lymph_nodes + ER + hormonal_therapy, data = train_b)
-summary(lm_fit_b)
-pred_b_final <- predict(lm_fit_b_final, newdata = test_b)
-rmse_b_final <- sqrt(mean((test_b$log_PFS - pred_b_final)^2))
-r2_b_final   <- cor(test_b$log_PFS, pred_b_final)^2
-
-rmse_b_final
-r2_b_final
-```
-Using the final model from part A, we found that the RMSE increased from 0.75 to 0.83, and the R-squared decreased to 0.144. This suggests that the model from part A does not generalize well to this new dataset.
-
-After slightly modifying the model by using the LASSO coefficients and selecting significant variables, we obtained a new model with a much lower RMSE, although the R-squared decreased slightly.
-
-I think this difference shows how things have changed over time. Medical treatments and technologies have improved, so some variables that were important before may no longer be as important now. However, some core variables are still important and remain in the model. Therefore, we need to make some adjustments to the model to better fit the new data.
-
-# **Testing Area**
-## GAM
-```{r}
-gam_fit_B <- gam(
-  log_PFS ~ 
-    age + 
-    menopause +
-    race +
-    s(bmi) +
-    s(tumor_size) + 
-    tumor_grade +
-    lymph_nodes + 
-    ER + 
-    PR +
-    HER2 + 
-    Ki67 + 
-    surgery + 
-    chemo +
-    hormonal_therapy,
-  data = datB,
-  method = "REML"
-)
-
-summary(gam_fit_B)
-plot(gam_fit_B, pages = 1, residuals = TRUE)
-```
-
-## RMSE/R^2
-```{r}
-pred_gam_B <- predict(gam_fit_B, newdata = datB)
-
-rmse_gam_B <- sqrt(mean((datB$log_PFS - pred_gam_B)^2))
-
-r2_gam_B <- 1 - sum((datB$log_PFS - pred_gam_B)^2) /
-  sum((datB$log_PFS - mean(datB$log_PFS))^2)
-
-rmse_gam_B
-r2_gam_B
-```
-
-## generalization
-```{r}
-pred_gam_B <- predict(gam_fit_B, newdata = datA)
-
-rmse_gam_B <- sqrt(mean((datA$log_PFS - pred_gam_B)^2))
-
-r2_gam_B <- 1 - sum((datA$log_PFS - pred_gam_B)^2) /
-  sum((datA$log_PFS - mean(datA$log_PFS))^2)
-
-rmse_gam_B
-r2_gam_B
-```
-
-
-
