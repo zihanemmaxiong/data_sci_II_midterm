@@ -286,11 +286,11 @@ lm_fit_datA <- lm(log_PFS ~ . , data = train)
 
 lm_pred <- predict(lm_fit_datA, newdata = test)
 
-lm_test_rmse <- sqrt(mean((test$log_PFS - lm_pred)^2))
-lm_test_r2 <- cor(test$log_PFS, lm_pred)^2
+lmA_rmse <- sqrt(mean((test$log_PFS - lm_pred)^2))
+lmA_r2 <- cor(test$log_PFS, lm_pred)^2
 
-lm_test_rmse
-lm_test_r2
+lmA_rmse
+lmA_r2
 ```
 # **Part 2: PFS model (2000 - 2005)**  
 ## Generalization lm on datB
@@ -325,19 +325,58 @@ lm_fit_datB <- lm(log_PFS ~ . , data = train_b)
 summary(lm_fit_datB)
 
 pred_b <- predict(lm_fit_datB, newdata = test_b)
-lm_rmse <- sqrt(mean((test_b$log_PFS - pred_b)^2))
-lm_r2 <- cor(test_b$log_PFS, pred_b)^2
+lmB_rmse <- sqrt(mean((test_b$log_PFS - pred_b)^2))
+lmB_r2 <- cor(test_b$log_PFS, pred_b)^2
 
-lm_rmse
-lm_r2
+lmB_rmse
+lmB_r2
 ```
-## compare 
+Although the model trained on datA does not generalize well to datB, a multiple linear regression model refitted on datB remains statistically significant (p < 0.001) and achieves a similar level of predictive performance when evaluated on its own test set (RMSE for datA = `r lmA_rmse`, for datB = `r lmB_rmse`).
+
+This suggests that the overall prediction difficulty is comparable across the two datasets, while the predictor–outcome relationships differ between them.
+
+## Changed in prediction
 ```{r}
-summary(lm_fit_datA)
-summary(lm_fit_datB)
+sig_code <- function(p) {
+  case_when(
+    p < 0.001 ~ "***",
+    p < 0.01  ~ "**",
+    p < 0.05  ~ "*",
+    p < 0.1   ~ ".",
+    TRUE      ~ "Not sig"
+  )
+}
+
+tidy_A <- tidy(lm_fit_datA) |> 
+  select(term, estimate, p.value) |>
+  rename(coef_A = estimate, p_A = p.value)
+
+tidy_B <- tidy(lm_fit_datB) |>
+  select(term, estimate, p.value) |>
+  rename(coef_B = estimate, p_B = p.value)
+
+compare_summary <- left_join(tidy_A, tidy_B, by = "term") |>
+  filter(term != "(Intercept)") |>
+  mutate(
+    direction = case_when(
+      sign(coef_A) != sign(coef_B) ~ "Reversed",
+      TRUE ~ "Same"
+    ),
+    diff_num = coef_B - coef_A,
+    diff = case_when(
+      diff_num > 0 ~ paste0("+", round(diff_num, 4)),
+      diff_num < 0 ~ as.character(round(diff_num, 4)),
+      TRUE ~ "Similar"
+    ),
+    sig_change = paste(sig_code(p_A), "to", sig_code(p_B))
+  ) |>
+  select(term, coef_A, coef_B, diff, direction, sig_change)
+
+compare_summary
 ```
 
-### 显著性变化
+### Noticeable Difference
+                   Estimate  Std. Error  t value   Pr(>|t|)    
 race4             -0.0459674  0.0533276  -0.862 0.388828    
 race4(Hispanic)    0.087417   0.046939   1.862   0.0627 .  
 
@@ -363,14 +402,9 @@ Ki67              -0.003995   0.002172  -1.839   0.0661 .
 hormonal_therapy1  0.1339154  0.0440594   3.039 0.002409 ** 
 hormonal_therapy1  0.220510   0.050064   4.405 1.13e-05 ***
 
-### 系数变化
-```{r}
-coef_A <- coef(lm_fit_datA)
-coef_B <- coef(lm_fit_datB)
+## Changes in Direction and Magnitude of Coefficients
 
-cbind(coef_A, coef_B, diff = coef_B - coef_A)
-```
-#### 值得关注的
+#### Variation in the Magnitude of Effects Between Cohorts
 tumor_size        -0.0750895606 -0.048159542  0.0269300189  *** to *
 
 lymph_nodes       -0.0563519761 -0.022620246  0.0337317301  *** to *
@@ -380,7 +414,7 @@ hormonal_therapy1  0.1339153865  0.220509607  0.0865942203
 
 Ki67              -0.0047432092 -0.003995138  0.0007480714  * to . (tiny changes)
 
-#### Inversed
+#### Shifts in the Direction of Effects Between Cohorts
 
 HER21             -0.2036882502  0.035626644  0.2393148946  *** to Not significant
 tumor_grade2      -0.0821804643  0.074815894  0.1569963580  (Not significant/Very close to 0.1)
@@ -392,5 +426,6 @@ race2              0.0718054151 -0.039498119 -0.1113035343  (Not significant)
 race3              0.0876697825 -0.024541361 -0.1122111439  (Not significant)
 race4             -0.0459674416  0.087417474  0.1333849160  (Not significant)
 
-## 我感觉这里不需要再跑一次一整个caret比较rmse了，毕竟老师问的重点是what has changed in prediction ## 
+
 ## 后面是EDA
+
