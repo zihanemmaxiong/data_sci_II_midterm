@@ -293,7 +293,7 @@ lmA_rmse
 lmA_r2
 ```
 # **Part 2: PFS model (2000 - 2005)**  
-## Generalization lm on datB
+## *○ Generalization lm on datB*
 
 ```{r}
 set.seed(123)
@@ -305,8 +305,11 @@ lm_rmse_datB
 lm_r2_datB
 ```
 
-The model does not generalize well to the new dataset. This is evidenced by the increase in RMSE (from `r lm_test_rmse` to `r lm_rmse_datB`) and the decrease in R-squared (from `r lm_test_r2` to `r lm_r2_datB`) when applied to datB, indicating reduced predictive accuracy and explanatory power.
+The model shows reduced performance when applied to the new dataset, as indicated by an increase in RMSE (from `r lmA_rmse` to `r lm_rmse_datB`) and a decrease in R-squared (from `r lmA_r2` to `r lm_r2_datB`).
 
+This suggests that the relationships between predictors and progression-free survival may differ between the two cohorts.
+
+下面这段可以给report
 This lack of generalizability may be attributed to differences between the two cohorts, including potential changes in patient characteristics, treatment strategies, and underlying data distributions over time. As a result, the relationships between predictors and progression-free survival may have shifted, limiting the applicability of the original model.
 
 ## *○ Refiting Model*  
@@ -335,7 +338,8 @@ Although the model trained on datA does not generalize well to datB, a multiple 
 
 This suggests that the overall prediction difficulty is comparable across the two datasets, while the predictor–outcome relationships differ between them.
 
-## Changed in prediction
+## *○ Changed in prediction*  
+We summarize predictors that exhibit noticeable changes in coefficient estimates between the two cohorts, including changes in direction, magnitude, or statistical significance.  
 ```{r}
 sig_code <- function(p) {
   case_when(
@@ -375,7 +379,22 @@ compare_summary <- left_join(tidy_A, tidy_B, by = "term") |>
 compare_summary
 ```
 
-### Noticeable Difference
+Overall, notable differences are observed between the two cohorts. Several predictors exhibit changes in the direction and magnitude of their effects, and some variables also show shifts in statistical significance. Detailed interpretation of these findings is provided in the main report.
+
+### Magnitude of Difference
+```{r}
+compare_summary |>
+  mutate(
+    diff_num = coef_B - coef_A
+  ) |> 
+  slice_max(diff_num, n = 6) |>
+  ggplot(aes(x = reorder(term, diff_num), y = diff_num)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Predictor", y = "Coefficient change (B - A)")
+```
+
+### Noticeable Difference(这部分就是方便写报告的，到时候会删)
                    Estimate  Std. Error  t value   Pr(>|t|)    
 race4             -0.0459674  0.0533276  -0.862 0.388828    
 race4(Hispanic)    0.087417   0.046939   1.862   0.0627 .  
@@ -402,7 +421,7 @@ Ki67              -0.003995   0.002172  -1.839   0.0661 .
 hormonal_therapy1  0.1339154  0.0440594   3.039 0.002409 ** 
 hormonal_therapy1  0.220510   0.050064   4.405 1.13e-05 ***
 
-## Changes in Direction and Magnitude of Coefficients
+### Changes in Direction and Magnitude of Coefficients(这部分就是方便写报告的，到时候会删)
 
 #### Variation in the Magnitude of Effects Between Cohorts
 tumor_size        -0.0750895606 -0.048159542  0.0269300189  *** to *
@@ -425,7 +444,3 @@ stage3             0.1124813977 -0.061369518 -0.1738509159  (Not significant)
 race2              0.0718054151 -0.039498119 -0.1113035343  (Not significant)
 race3              0.0876697825 -0.024541361 -0.1122111439  (Not significant)
 race4             -0.0459674416  0.087417474  0.1333849160  (Not significant)
-
-
-## 后面是EDA
-
