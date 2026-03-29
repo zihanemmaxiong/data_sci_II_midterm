@@ -20,6 +20,9 @@ library(glmnet)
 
 library(mgcv)
 library(earth)
+library(kableExtra)
+
+dir.create("figures", showWarnings = FALSE)
 ```
 
 # **Preparation and Inspection**  
@@ -89,13 +92,18 @@ theme1$plot.line$lwd <- 2
 theme1$strip.background$col <- rgb(.0, .2, .6, .2)
 trellis.par.set(theme1)
 
-featurePlot(x = train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")],
+fp1 <- featurePlot(x = train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")],
             y = train$log_PFS,
             plot = "scatter",
             span = 0.5,
             labels = c("Predictors", "log_PFS"),
             type = c("p", "smooth"),
             layout=c(3,2))
+fp1
+
+png("figures/featureplot_partI.png", width = 2400, height = 1600, res = 300)
+print(fp1)
+dev.off()
 ```
 
 While looking at the features plots, we can observe that:
@@ -111,6 +119,8 @@ While looking at the features plots, we can observe that:
 `tumor_size`: ngeative relationship. larger tumor size associated with shorter PFS.
 
 As `bmi` and `tumor_size` shows the possibility of nonlinear relationships, a GAM was employed to evaluate whether nonlinear effects should be incorporated into the model.
+
+xzh:这里看gam我不知道行不行,毕竟我们还是在eda的阶段,直接build model然后s()不好解释
 ```{r}
 set.seed(123)
 fit <- gam(
@@ -123,13 +133,25 @@ summary(fit)
 The GAM analysis indicated that BMI exhibited clear nonlinear effects, while tumor size showed mild nonlinearity. Therefore, flexible models such as GAM and MARS were considered as candidate models.
 
 ```{r}
-# also take a look at the Pearson correlation coefficient
-cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")], 
+# Pearson correlation with log_PFS
+cor_with_pfs <- cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")],
     train$log_PFS)
+cor_df <- data.frame(Variable = rownames(cor_with_pfs),
+                     Correlation = round(cor_with_pfs[, 1], 4))
+kbl_cor <- kbl(cor_df, caption = "Pearson Correlation with log_PFS",
+               row.names = FALSE) |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_cor
 ```
+
 ```{r}
 # corrplot, none r<0.8
 cor_matrix <- cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")])
+
+png("figures/corrplot_partI.png", width = 1800, height = 1800, res = 300)
+corrplot(cor_matrix, method = "number", type = "upper")
+dev.off()
+
 corrplot(cor_matrix, method = "number", type = "upper")
 ```
 
@@ -156,7 +178,11 @@ p8 <- ggplot(train, aes(x = chemo, y = log_PFS)) +
       geom_boxplot() + theme_bw()
 p9 <- ggplot(train, aes(x = hormonal_therapy, y = log_PFS)) + 
       geom_boxplot() + theme_bw()
-(p1 + p2 + p3) / (p4 + p5 + p6) / (p7 + p8 + p9)
+bp_combined <- (p1 + p2 + p3) / (p4 + p5 + p6) / (p7 + p8 + p9)
+bp_combined
+
+ggsave("figures/boxplots_categorical_partI.png", bp_combined,
+       width = 12, height = 10, dpi = 300)
 ```
 
 Notice that:
@@ -188,7 +214,11 @@ for(i in seq_along(cat_vars)){
   anova_results$P_value[i] <- round(p_val, 4)
 }
 
-anova_results
+kbl_anova <- kbl(anova_results, digits = 4,
+                 caption = "One-Way ANOVA: Categorical Predictors vs log_PFS") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_anova
+
 ```
 
 ## *○ Model Selection*   
@@ -204,6 +234,11 @@ set.seed(123)
 
 lm_fit <- lm(log_PFS ~ . , data = train)
 summary(lm_fit)
+
+kbl_lm <- kbl(tidy(lm_fit), digits = 4,
+              caption = "Full Linear Regression Model Summary") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
 ```
 The multiple linear regression model was statistically significant (p < 0.001), with an R² of `r summary(lm_fit)$r.squared` and adjusted R² of `r summary(lm_fit)$adj.r.squared`, indicating that approximately `r round(summary(lm_fit)$r.squared,2)*100`% of the variability in log-transformed PFS was explained by the predictors.
 
@@ -252,6 +287,18 @@ enet_fit <- train(log_PFS ~ ., data = train, method = "glmnet", metric = "RMSE",
                   tuneGrid = expand.grid(alpha = seq(0, 1, length = 21),
                                          lambda = exp(seq(-5, 5, length = 100))),
                   trControl = ctrl)
+lasso_coefs <- coef(lasso_fit$finalModel, lasso_fit$bestTune$lambda)
+lasso_df <- data.frame(
+  Term = rownames(lasso_coefs),
+  Coefficient = round(as.numeric(lasso_coefs), 6)
+) |> filter(Coefficient != 0)
+
+kbl_lasso <- kbl(lasso_df, caption = "LASSO Non-Zero Coefficients",
+                 row.names = FALSE) |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_lasso
+
+summary(lm_fit$finalModel)
 ```
 
 #### Nonlinear Models
@@ -272,8 +319,24 @@ mars_fit <- train(log_PFS ~ ., data = train, method = "earth", metric = "RMSE",
 ```{r}
 resamp <- resamples(list(LM = lm_fit, Ridge = ridge_fit, Lasso = lasso_fit,
                          ENet = enet_fit, GAM = gam_fit, MARS = mars_fit))
-summary(resamp)
-bwplot(resamp, metric = "RMSE")
+resamp_summary <- summary(resamp)
+
+# Save RMSE summary table
+rmse_stats <- as.data.frame(resamp_summary$statistics$RMSE)
+rmse_stats$Model <- rownames(rmse_stats)
+rmse_stats <- rmse_stats |> select(Model, everything())
+kbl_rmse <- kbl(rmse_stats, digits = 4,
+                caption = "Cross-Validated RMSE Summary") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_rmse
+save_kable(kbl_rmse, "figures/table_cv_rmse_partI.png")
+
+bw <- bwplot(resamp, metric = "RMSE")
+bw
+
+png("figures/bwplot_rmse_partI.png", width = 2000, height = 1200, res = 300)
+print(bw)
+dev.off()
 ```
 
 The predictive performance of all candidate models was highly comparable, with only minimal differences in RMSE. Although GAM achieved the lowest RMSE, the improvement over the linear model was negligible (<1%), suggesting that increased model flexibility did not lead to meaningful gains in predictive performance, the linear regression model already captures most of the signal. 
@@ -289,9 +352,61 @@ lm_pred <- predict(lm_fit_datA, newdata = test)
 lmA_rmse <- sqrt(mean((test$log_PFS - lm_pred)^2))
 lmA_r2 <- cor(test$log_PFS, lm_pred)^2
 
-lmA_rmse
-lmA_r2
+# Final model summary table
+kbl_final <- kbl(tidy(lm_fit_datA), digits = 4,
+                 caption = "Final Linear Model (Part I) Coefficients") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_final
+save_kable(kbl_final, "figures/table_final_model_partI.png")
+
+# Test performance table
+perf_A <- data.frame(Metric = c("RMSE", "R-squared"),
+                     Value = round(c(lmA_rmse, lmA_r2), 4))
+kbl_perf <- kbl(perf_A, caption = "Final Model Test Performance (Part I)") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_perf
+
 ```
+
+```{r}
+# residuals plot
+png("figures/residuals_plot_partI.png", width = 1800, height = 1400, res = 300)
+plot(lm_pred, test$log_PFS - lm_pred,
+     xlab = "Fitted Values", ylab = "Residuals",
+     main = "Residuals vs Fitted (Part I)")
+abline(h = 0, col = "red")
+dev.off()
+
+plot(lm_pred, test$log_PFS - lm_pred,
+     xlab = "Fitted Values", ylab = "Residuals",
+     main = "Residuals vs Fitted (Part I)")
+abline(h = 0, col = "red")
+
+# QQ plot
+png("figures/qqplot_partI.png", width = 1800, height = 1400, res = 300)
+qqnorm(test$log_PFS - lm_pred, main = "Q-Q Plot of Residuals (Part I)")
+qqline(test$log_PFS - lm_pred, col = "red")
+dev.off()
+
+qqnorm(test$log_PFS - lm_pred, main = "Q-Q Plot of Residuals (Part I)")
+qqline(test$log_PFS - lm_pred, col = "red")
+```
+
+
+```{r}
+test_stats <- data.frame(
+  Statistic = c("Mean", "SD", "Min", "Max"),
+  Value = round(c(mean(test$log_PFS), sd(test$log_PFS),
+                  min(test$log_PFS), max(test$log_PFS)), 4)
+)
+kbl_stats <- kbl(test_stats,
+                 caption = "Test Set log_PFS Summary Statistics") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_stats
+
+```
+
+
 # **Part 2: PFS model (2000 - 2005)**  
 ## *○ Generalization lm on datB*
 
@@ -301,8 +416,15 @@ pred_b <- predict(lm_fit, newdata = datB)
 lm_rmse_datB <- sqrt(mean((datB$log_PFS - pred_b)^2))
 lm_r2_datB <- cor(datB$log_PFS, pred_b)^2
 
-lm_rmse_datB
-lm_r2_datB
+gen_perf <- data.frame(
+  Dataset = c("datA (test)", "datB (generalization)"),
+  RMSE = round(c(lmA_rmse, lm_rmse_datB), 4),
+  R_squared = round(c(lmA_r2, lm_r2_datB), 4)
+)
+kbl_gen <- kbl(gen_perf, caption = "Generalization Performance: datA Model on datB") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_gen
+
 ```
 
 The model shows reduced performance when applied to the new dataset, as indicated by an increase in RMSE (from `r lmA_rmse` to `r lm_rmse_datB`) and a decrease in R-squared (from `r lmA_r2` to `r lm_r2_datB`).
@@ -321,6 +443,31 @@ train_b <- training(datsplit_b)
 test_b  <- testing(datsplit_b)
 ```
 
+```{r,warning=FALSE}
+# visualization using train data
+# continuous: age, bmi, tumor_size, lymph_nodes, Ki67
+theme1 <- trellis.par.get()
+theme1$plot.symbol$col <- rgb(.2, .4, .2, .5)
+theme1$plot.symbol$pch <- 16
+theme1$plot.line$col <- rgb(.8, .1, .1, 1)
+theme1$plot.line$lwd <- 2
+theme1$strip.background$col <- rgb(.0, .2, .6, .2)
+trellis.par.set(theme1)
+
+fp2 <- featurePlot(x = train_b[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")],
+            y = train_b$log_PFS,
+            plot = "scatter",
+            span = 0.5,
+            labels = c("Predictors", "log_PFS"),
+            type = c("p", "smooth"),
+            layout = c(3, 2))
+fp2
+
+png("figures/featureplot_partII.png", width = 2400, height = 1600, res = 300)
+print(fp2)
+dev.off()
+```
+
 ```{r}
 set.seed(123)
 
@@ -331,8 +478,20 @@ pred_b <- predict(lm_fit_datB, newdata = test_b)
 lmB_rmse <- sqrt(mean((test_b$log_PFS - pred_b)^2))
 lmB_r2 <- cor(test_b$log_PFS, pred_b)^2
 
-lmB_rmse
-lmB_r2
+# Part 2 model summary table
+kbl_lmB <- kbl(tidy(lm_fit_datB), digits = 4,
+               caption = "Refitted Linear Model (Part II) Coefficients") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_lmB
+save_kable(kbl_lmB, "figures/table_lm_partII.png")
+
+# Part 2 test performance
+perf_B <- data.frame(Metric = c("RMSE", "R-squared"),
+                     Value = round(c(lmB_rmse, lmB_r2), 4))
+kbl_perfB <- kbl(perf_B, caption = "Refitted Model Test Performance (Part II)") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_perfB
+
 ```
 Although the model trained on datA does not generalize well to datB, a multiple linear regression model refitted on datB remains statistically significant (p < 0.001) and achieves a similar level of predictive performance when evaluated on its own test set (RMSE for datA = `r lmA_rmse`, for datB = `r lmB_rmse`).
 
@@ -376,22 +535,49 @@ compare_summary <- left_join(tidy_A, tidy_B, by = "term") |>
   ) |>
   select(term, coef_A, coef_B, diff, direction, sig_change)
 
-compare_summary
+kbl_compare <- kbl(compare_summary, digits = 4,
+                   caption = "Coefficient Comparison: datA vs datB") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_compare
+
 ```
 
 Overall, notable differences are observed between the two cohorts. Several predictors exhibit changes in the direction and magnitude of their effects, and some variables also show shifts in statistical significance. Detailed interpretation of these findings is provided in the main report.
 
+```{r}
+# Compare key variable distributions between cohorts
+dist_compare <- data.frame(
+  Variable = c("tumor_size (mean)", "tumor_size (sd)",
+               "HER2 positive (%)", "hormonal_therapy (%)"),
+  datA = round(c(mean(datA$tumor_size), sd(datA$tumor_size),
+                 mean(datA$HER2 == 1) * 100,
+                 mean(datA$hormonal_therapy == 1) * 100), 2),
+  datB = round(c(mean(datB$tumor_size), sd(datB$tumor_size),
+                 mean(datB$HER2 == 1) * 100,
+                 mean(datB$hormonal_therapy == 1) * 100), 2)
+)
+
+kbl_dist <- kbl(dist_compare,
+                caption = "Key Variable Distribution: datA vs datB") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+kbl_dist
+
+```
+
 ### Magnitude of Difference
 ```{r}
-compare_summary |>
+p_mag <- compare_summary |>
   mutate(
     diff_num = coef_B - coef_A
-  ) |> 
+  ) |>
   slice_max(diff_num, n = 6) |>
   ggplot(aes(x = reorder(term, diff_num), y = diff_num)) +
   geom_col() +
   coord_flip() +
-  labs(x = "Predictor", y = "Coefficient change (B - A)")
+  labs(x = "Predictor", y = "Coefficient change (B - A)") +
+  theme_bw()
+p_mag
+
 ```
 
 ### Noticeable Difference(这部分就是方便写报告的，到时候会删)
