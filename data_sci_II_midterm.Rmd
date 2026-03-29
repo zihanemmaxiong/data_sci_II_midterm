@@ -118,19 +118,7 @@ While looking at the features plots, we can observe that:
 
 `tumor_size`: ngeative relationship. larger tumor size associated with shorter PFS.
 
-As `bmi` and `tumor_size` shows the possibility of nonlinear relationships, a GAM was employed to evaluate whether nonlinear effects should be incorporated into the model.
-
-xzh:这里看gam我不知道行不行,毕竟我们还是在eda的阶段,直接build model然后s()不好解释
-```{r}
-set.seed(123)
-fit <- gam(
-  log_PFS ~ s(age) + menopause + race + s(bmi) + s(tumor_size) + tumor_grade + 
-    s(lymph_nodes) + ER + PR + HER2 + s(Ki67) + surgery + chemo + hormonal_therapy,
-  data = datA,
-  method = "REML")
-summary(fit)
-```
-The GAM analysis indicated that BMI exhibited clear nonlinear effects, while tumor size showed mild nonlinearity. Therefore, flexible models such as GAM and MARS were considered as candidate models.
+As `bmi` shows the possibility of nonlinear relationships, flexible models such as GAM and MARS were considered as candidate models.
 
 ```{r}
 # Pearson correlation with log_PFS
@@ -143,6 +131,7 @@ kbl_cor <- kbl(cor_df, caption = "Pearson Correlation with log_PFS",
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 kbl_cor
 ```
+Pearson correlation suggested moderate negative linear associations of tumor size, lymph nodes, and Ki67 with `log_PFS`, while age and BMI showed little linear correlation. As Pearson correlation captures only linear relationships, the near-zero correlation for BMI does not rule out a nonlinear association.
 
 ```{r}
 # corrplot, none r<0.8
@@ -219,14 +208,13 @@ kbl_anova <- kbl(anova_results, digits = 4,
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 kbl_anova
 
-```
+```   
+Menopausal status was retained in the model due to its clinical relevance, even though it was not statistically significant in the univariate analysis.
 
 ## *○ Model Selection*   
 Since the response variable, log-transformed PFS, is continuous, a linear regression model was considered appropriate. Exploratory data analysis showed that most continuous predictors had approximately linear relationships with log_PFS, with only mild non-linearity observed for BMI. Therefore, linear regression was used as the primary modeling approach.
 
 In addition, given the evidence of nonlinear effects between log(PFS) and BMI, flexible models such as GAM and MARS were also considered as candidate models.
-
-Boxplots of categorical variables also suggested differences in log_PFS across groups, indicating their potential relevance in the model.
 
 ### Base model (linear)   
 ```{r, linear regression 1}
@@ -391,7 +379,9 @@ dev.off()
 qqnorm(test$log_PFS - lm_pred, main = "Q-Q Plot of Residuals (Part I)")
 qqline(test$log_PFS - lm_pred, col = "red")
 ```
-
+Residuals are randomly scattered around zero with no clear pattern, suggesting no major violation of linearity or constant variance.   
+The Q-Q plot suggests that residuals are approximately normally distributed, with only minor deviations in the tails.   
+These diagnostic results suggest that the model assumptions are reasonably satisfied, indicating that the fitted linear model is adequate.  
 
 ```{r}
 test_stats <- data.frame(
@@ -410,7 +400,7 @@ kbl_stats
 # **Part 2: PFS model (2000 - 2005)**  
 ## *○ Generalization lm on datB*
 
-```{r}
+```{r, warning=FALSE}
 set.seed(123)
 pred_b <- predict(lm_fit, newdata = datB)
 lm_rmse_datB <- sqrt(mean((datB$log_PFS - pred_b)^2))
@@ -430,9 +420,6 @@ kbl_gen
 The model shows reduced performance when applied to the new dataset, as indicated by an increase in RMSE (from `r lmA_rmse` to `r lm_rmse_datB`) and a decrease in R-squared (from `r lmA_r2` to `r lm_r2_datB`).
 
 This suggests that the relationships between predictors and progression-free survival may differ between the two cohorts.
-
-下面这段可以给report
-This lack of generalizability may be attributed to differences between the two cohorts, including potential changes in patient characteristics, treatment strategies, and underlying data distributions over time. As a result, the relationships between predictors and progression-free survival may have shifted, limiting the applicability of the original model.
 
 ## *○ Refiting Model*  
 
@@ -579,54 +566,3 @@ p_mag <- compare_summary |>
 p_mag
 
 ```
-
-### Noticeable Difference(这部分就是方便写报告的，到时候会删)
-                   Estimate  Std. Error  t value   Pr(>|t|)    
-race4             -0.0459674  0.0533276  -0.862 0.388828    
-race4(Hispanic)    0.087417   0.046939   1.862   0.0627 .  
-
-tumor_size        -0.0750896  0.0220385  -3.407 0.000673 ***
-tumor_grade2      -0.0821805  0.0514670  -1.597 0.110519    
-tumor_grade3      -0.1850927  0.0661012  -2.800 0.005170 ** 
-lymph_nodes       -0.0563520  0.0106908  -5.271 1.54e-07 ***
-ER1                0.2416039  0.0576110   4.194 2.90e-05 ***
-
-tumor_size        -0.048160   0.021006  -2.293   0.0220 *  
-tumor_grade2       0.074816   0.046435   1.611   0.1073    
-tumor_grade3      -0.118607   0.063932  -1.855   0.0638 .  
-lymph_nodes       -0.022620   0.010988  -2.059   0.0397 *  
-ER1                0.157815   0.061828   2.552   0.0108 *  
-
-
-HER21             -0.2036883  0.0426737  -4.773 1.98e-06 ***
-HER21              0.035627   0.039715   0.897   0.3698    
-
-Ki67              -0.0047432  0.0021852  -2.171 0.030110 *  
-Ki67              -0.003995   0.002172  -1.839   0.0661 .  
-
-hormonal_therapy1  0.1339154  0.0440594   3.039 0.002409 ** 
-hormonal_therapy1  0.220510   0.050064   4.405 1.13e-05 ***
-
-### Changes in Direction and Magnitude of Coefficients(这部分就是方便写报告的，到时候会删)
-
-#### Variation in the Magnitude of Effects Between Cohorts
-tumor_size        -0.0750895606 -0.048159542  0.0269300189  *** to *
-
-lymph_nodes       -0.0563519761 -0.022620246  0.0337317301  *** to *
-ER1                0.2416039362  0.157814538 -0.0837893984  *** to *
-
-hormonal_therapy1  0.1339153865  0.220509607  0.0865942203
-
-Ki67              -0.0047432092 -0.003995138  0.0007480714  * to . (tiny changes)
-
-#### Shifts in the Direction of Effects Between Cohorts
-
-HER21             -0.2036882502  0.035626644  0.2393148946  *** to Not significant
-tumor_grade2      -0.0821804643  0.074815894  0.1569963580  (Not significant/Very close to 0.1)
-tumor_grade3      -0.1850926774 -0.118606958  0.0664857196  ** to .
-
-stage3             0.1124813977 -0.061369518 -0.1738509159  (Not significant)
-
-race2              0.0718054151 -0.039498119 -0.1113035343  (Not significant)
-race3              0.0876697825 -0.024541361 -0.1122111439  (Not significant)
-race4             -0.0459674416  0.087417474  0.1333849160  (Not significant)
