@@ -317,7 +317,7 @@ kbl_rmse <- kbl(rmse_stats, digits = 4,
                 caption = "Cross-Validated RMSE Summary") |>
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 kbl_rmse
-save_kable(kbl_rmse, "figures/table_cv_rmse_partI.png")
+
 
 bw <- bwplot(resamp, metric = "RMSE")
 bw
@@ -345,7 +345,7 @@ kbl_final <- kbl(tidy(lm_fit_datA), digits = 4,
                  caption = "Final Linear Model (Part I) Coefficients") |>
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 kbl_final
-save_kable(kbl_final, "figures/table_final_model_partI.png")
+
 
 # Test performance table
 perf_A <- data.frame(Metric = c("RMSE", "R-squared"),
@@ -470,7 +470,7 @@ kbl_lmB <- kbl(tidy(lm_fit_datB), digits = 4,
                caption = "Refitted Linear Model (Part II) Coefficients") |>
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 kbl_lmB
-save_kable(kbl_lmB, "figures/table_lm_partII.png")
+
 
 # Part 2 test performance
 perf_B <- data.frame(Metric = c("RMSE", "R-squared"),
