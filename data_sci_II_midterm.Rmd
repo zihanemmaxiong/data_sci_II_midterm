@@ -100,10 +100,6 @@ fp1 <- featurePlot(x = train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki6
             type = c("p", "smooth"),
             layout=c(3,2))
 fp1
-
-png("figures/featureplot_partI.png", width = 2400, height = 1600, res = 300)
-print(fp1)
-dev.off()
 ```
 
 While looking at the features plots, we can observe that:
@@ -136,11 +132,6 @@ Pearson correlation suggested moderate negative linear associations of tumor siz
 ```{r}
 # corrplot, none r<0.8
 cor_matrix <- cor(train[, c("age", "bmi", "tumor_size", "lymph_nodes", "Ki67")])
-
-png("figures/corrplot_partI.png", width = 1800, height = 1800, res = 300)
-corrplot(cor_matrix, method = "number", type = "upper")
-dev.off()
-
 corrplot(cor_matrix, method = "number", type = "upper")
 ```
 
@@ -169,9 +160,6 @@ p9 <- ggplot(train, aes(x = hormonal_therapy, y = log_PFS)) +
       geom_boxplot() + theme_bw()
 bp_combined <- (p1 + p2 + p3) / (p4 + p5 + p6) / (p7 + p8 + p9)
 bp_combined
-
-ggsave("figures/boxplots_categorical_partI.png", bp_combined,
-       width = 12, height = 10, dpi = 300)
 ```
 
 Notice that:
@@ -321,10 +309,6 @@ kbl_rmse
 
 bw <- bwplot(resamp, metric = "RMSE")
 bw
-
-png("figures/bwplot_rmse_partI.png", width = 2000, height = 1200, res = 300)
-print(bw)
-dev.off()
 ```
 
 The predictive performance of all candidate models was highly comparable, with only minimal differences in RMSE. Although GAM achieved the lowest RMSE, the improvement over the linear model was negligible (<1%), suggesting that increased model flexibility did not lead to meaningful gains in predictive performance, the linear regression model already captures most of the signal. 
@@ -371,11 +355,6 @@ plot(lm_pred, test$log_PFS - lm_pred,
 abline(h = 0, col = "red")
 
 # QQ plot
-png("figures/qqplot_partI.png", width = 1800, height = 1400, res = 300)
-qqnorm(test$log_PFS - lm_pred, main = "Q-Q Plot of Residuals (Part I)")
-qqline(test$log_PFS - lm_pred, col = "red")
-dev.off()
-
 qqnorm(test$log_PFS - lm_pred, main = "Q-Q Plot of Residuals (Part I)")
 qqline(test$log_PFS - lm_pred, col = "red")
 ```
@@ -449,10 +428,6 @@ fp2 <- featurePlot(x = train_b[, c("age", "bmi", "tumor_size", "lymph_nodes", "K
             type = c("p", "smooth"),
             layout = c(3, 2))
 fp2
-
-png("figures/featureplot_partII.png", width = 2400, height = 1600, res = 300)
-print(fp2)
-dev.off()
 ```
 
 ```{r}
