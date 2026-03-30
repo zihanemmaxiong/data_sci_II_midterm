@@ -3145,15 +3145,7 @@ R-squared
 </tbody>
 </table>
 <pre class="r"><code># residuals plot
-png(&quot;figures/residuals_plot_partI.png&quot;, width = 1800, height = 1400, res = 300)
 plot(lm_pred, test$log_PFS - lm_pred,
-     xlab = &quot;Fitted Values&quot;, ylab = &quot;Residuals&quot;,
-     main = &quot;Residuals vs Fitted (Part I)&quot;)
-abline(h = 0, col = &quot;red&quot;)
-dev.off()</code></pre>
-<pre><code>## quartz_off_screen 
-##                 2</code></pre>
-<pre class="r"><code>plot(lm_pred, test$log_PFS - lm_pred,
      xlab = &quot;Fitted Values&quot;, ylab = &quot;Residuals&quot;,
      main = &quot;Residuals vs Fitted (Part I)&quot;)
 abline(h = 0, col = &quot;red&quot;)</code></pre>

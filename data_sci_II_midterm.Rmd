@@ -342,13 +342,6 @@ kbl_perf
 
 ```{r}
 # residuals plot
-png("figures/residuals_plot_partI.png", width = 1800, height = 1400, res = 300)
-plot(lm_pred, test$log_PFS - lm_pred,
-     xlab = "Fitted Values", ylab = "Residuals",
-     main = "Residuals vs Fitted (Part I)")
-abline(h = 0, col = "red")
-dev.off()
-
 plot(lm_pred, test$log_PFS - lm_pred,
      xlab = "Fitted Values", ylab = "Residuals",
      main = "Residuals vs Fitted (Part I)")
